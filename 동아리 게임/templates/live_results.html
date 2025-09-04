@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>실시간 순위</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      font-family: 'Noto Sans KR', Arial, sans-serif;
+      background-image: url('{{ url_for("static", filename="bg.jpg") }}');
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+      overflow-y: auto;
+    }
+
+    .table-container {
+      flex: 1;
+      max-height: 70vh;
+      overflow-y: auto;
+      margin: 20px;
+      border-radius: 16px;
+    }
+
+    h2 {
+      color: #fff; /* 흰색 텍스트 */
+      font-size: 28px; /* 폰트 크기 증가 */
+      font-weight: 700; /* 굵은 폰트 */
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.5), 0 0 10px rgba(0,191,255,0.7); /* 그림자 추가 */
+      background: rgba(0,0,0,0.7); /* 반투명 검정 배경 */
+      padding: 10px 15px; /* 패딩 추가 */
+      border-radius: 8px; /* 둥근 모서리 */
+      margin-bottom: 15px; /* 테이블과 간격 */
+      display: inline-block; /* 텍스트 크기에 맞게 배경 */
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      max-width: 700px;
+      background: rgba(255,255,255,0.5);
+      border-radius: 16px;
+    }
+
+    th, td {
+      border: 1px solid #999;
+      padding: 8px;
+      text-align: center;
+      background: rgba(255,255,255,0.7);
+    }
+
+    th {
+      background: rgba(238,238,238,0.6);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    /* 대안: 밝은 배경 이미지일 경우 */
+    /*
+    h2 {
+      color: #333; 
+      text-shadow: 2px 2px 4px rgba(255,255,255,0.5);
+      background: rgba(255,255,255,0.8);
+    }
+    */
+
+    /* 스크롤바 스타일링 */
+    .table-container::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    .table-container::-webkit-scrollbar-track {
+      background: rgba(0,0,0,0.1);
+      border-radius: 10px;
+    }
+
+    .table-container::-webkit-scrollbar-thumb {
+      background: rgba(0,191,255,0.6);
+      border-radius: 10px;
+    }
+
+    .table-container::-webkit-scrollbar-thumb:hover {
+      background: rgba(0,191,255,0.8);
+    }
+
+    #particleCanvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    #firstNamePopup {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    #firstNameText {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #fff;
+      font-size: 7vw;
+      font-weight: bold;
+      text-shadow: 0 0 40px #00bfff, 0 0 80px #000;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <audio id="cheer" src="{{ url_for('static', filename='cheer.mp3') }}"></audio>
+
+  <canvas id="particleCanvas"></canvas>
+
+  <div id="firstNamePopup">
+    <div id="firstNameText"></div>
+  </div>
+
+  <div style="display: flex; gap: 40px; align-items: flex-start; padding: 20px;">
+    <div class="table-container">
+      <h2>🏎️자동차 레이스 순위</h2>
+      <table id="raceTable">
+        <tr>
+          <th>순위</th>
+          <th>학번</th>
+          <th>Lap 1 (초)</th>
+          <th>Lap 2 (초)</th>
+          <th>Lap 3 (초)</th>
+          <th>총 시간 (초)</th>
+        </tr>
+      </table>
+    </div>
+    <div class="table-container">
+      <h2>✈️비행기 게임 점수</h2>
+      <table id="planeTable">
+        <tr>
+          <th>순위</th>
+          <th>학번</th>
+          <th>점수</th>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('particleCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    let particles = [];
+
+    function hexToRgb(hex) {
+      const bigint = parseInt(hex.slice(1), 16);
+      const r = (bigint >> 16) & 255;
+      const g = (bigint >> 8) & 255;
+      const b = bigint & 255;
+      return `${r},${g},${b}`;
+    }
+
+    function createFireworks() {
+      const colors = ['#ff0000','#00ff00','#0000ff','#ffff00','#ff00ff','#00ffff'];
+      for (let i = 0; i < 200; i++) {
+        particles.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          vx: (Math.random() - 0.5) * 10,
+          vy: (Math.random() - 0.5) * 10,
+          alpha: 1,
+          size: Math.random() * 8 + 2,
+          color: colors[Math.floor(Math.random() * colors.length)]
+        });
+      }
+    }
+
+    function updateParticles() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles = particles.filter(p => p.alpha > 0);
+      particles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= 0.005;
+        ctx.fillStyle = `rgba(${hexToRgb(p.color)},${p.alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      requestAnimationFrame(updateParticles);
+    }
+    updateParticles();
+
+    function playCheer() {
+      const audio = document.getElementById('cheer');
+      audio.currentTime = 0;
+      audio.play().catch(e => console.log(e));
+    }
+
+    function showFirstName(name) {
+      const popup = document.getElementById('firstNamePopup');
+      const text = document.getElementById('firstNameText');
+      text.textContent = name + ' 1등!';
+      popup.style.display = 'block';
+      setTimeout(() => { popup.style.display = 'none'; }, 2000);
+    }
+
+    let prevFirstRace = null;
+    let prevFirstPlane = null;
+
+    async function fetchAndRender() {
+      try {
+        const res = await fetch('/api/results');
+        if (!res.ok) throw new Error("서버 응답 오류");
+        const data = await res.json();
+
+        // 자동차 순위
+        const raceTable = document.getElementById('raceTable');
+        raceTable.querySelectorAll('tr:not(:first-child)').forEach(row => row.remove());
+        const raceRecords = {};
+        data.filter(item => item.type !== 'plane').forEach(item => {
+          if (!raceRecords[item.studentId] || item.total < raceRecords[item.studentId].total) {
+            raceRecords[item.studentId] = item;
+          }
+        });
+        const raceSorted = Object.values(raceRecords).sort((a,b) => a.total - b.total);
+        let raceRank = 1;
+        let currentFirstRace = raceSorted[0]?.studentId || null;
+
+        raceSorted.forEach(item => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${raceRank === 1 ? "🏆 " : ""}${raceRank}</td>
+            <td>${item.studentId}</td>
+            <td>${item.lap1 ? item.lap1.toFixed(2) : '-'}</td>
+            <td>${item.lap2 ? item.lap2.toFixed(2) : '-'}</td>
+            <td>${item.lap3 ? item.lap3.toFixed(2) : '-'}</td>
+            <td>${item.total ? item.total.toFixed(2) : '-'}</td>
+          `;
+          raceTable.appendChild(tr);
+          raceRank++;
+        });
+
+        if (currentFirstRace && currentFirstRace !== prevFirstRace) {
+          createFireworks();
+          showFirstName(currentFirstRace);
+          playCheer();
+        }
+        prevFirstRace = currentFirstRace;
+
+        // 비행기 순위
+        const planeTable = document.getElementById('planeTable');
+        planeTable.querySelectorAll('tr:not(:first-child)').forEach(row => row.remove());
+        const planeRecords = {};
+        data.filter(item => item.type === 'plane').forEach(item => {
+          if (!planeRecords[item.studentId] || item.score > planeRecords[item.studentId].score) {
+            planeRecords[item.studentId] = item;
+          }
+        });
+        const planeSorted = Object.values(planeRecords).sort((a,b) => b.score - a.score);
+        let planeRank = 1;
+        let currentFirstPlane = planeSorted[0]?.studentId || null;
+
+        planeSorted.forEach(item => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${planeRank === 1 ? "🏆 " : ""}${planeRank}</td>
+            <td>${item.studentId}</td>
+            <td>${item.score}</td>
+          `;
+          planeTable.appendChild(tr);
+          planeRank++;
+        });
+
+        if (currentFirstPlane && currentFirstPlane !== prevFirstPlane) {
+          createFireworks();
+          showFirstName(currentFirstPlane);
+          playCheer();
+        }
+        prevFirstPlane = currentFirstPlane;
+
+      } catch(e) {
+        console.error("데이터 불러오기 실패:", e);
+      }
+    }
+
+    fetchAndRender();
+    setInterval(fetchAndRender, 3000);
+  </script>
+</body>
+</html>
